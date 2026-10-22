@@ -11,3 +11,11 @@ __pycache__/
 
 # Generated reports
 reports/
+/reports/
+
+# Local datasets
+data/
+/data/
+
+# Local tests
+tests.py

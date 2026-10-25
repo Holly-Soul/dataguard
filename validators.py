@@ -1,19 +1,33 @@
+from loader import load_csv
+
+
 def check_missing_values(data: list[dict[str, str | None]]) -> dict:
-    missing_report = {}
     locations = []
     for index, dict_data in enumerate(data, start=1):
         for column_name, value in dict_data.items():
             if value in ("", None):
                 locations.append({"row": index, "column": column_name})
-    missing_report["count"] = len(locations)
-    missing_report["locations"] = locations
-    return missing_report
+    return {"count": len(locations), "locations": locations}
 
-print(check_missing_values([
-        {"id": "1", "name": ""},
-        {"id": "2", "name": "Maria"},
-        {"id": "3", "name": None},
-        {"id": "4", "name": "", "age": None}
-    ]))
+
+def check_duplicates(data: list[dict[str, str | None]]) -> dict:
+    seen = set()
+    locations = []
+
+    for index, dict_data in enumerate(data, start=1):
+        row_key = frozenset(dict_data.items())
+        if row_key not in seen:
+            seen.add(row_key)
+        else:
+            locations.append({"row": index, "column": None})
+
+    return {"count": len(locations), "locations": locations}
+
+
 if __name__ == "__main__":
-    True
+    data = load_csv("data/test_loader.csv")
+    print("Nulls: ", check_missing_values(data))
+    print(
+        "Dubls: ",
+        check_duplicates([{"id": "1", "name": "Alex"}, {"id": "Alex", "name": "1"}]),
+    )

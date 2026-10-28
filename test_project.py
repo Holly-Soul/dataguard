@@ -1,12 +1,16 @@
 import pytest
 import copy
 from loader import load_csv
-from validators import check_missing_values, check_duplicates
-from inference import detect_value_type, infer_column_type, infer_schema
+from validators import check_missing_values, check_duplicates, check_type_anomalies
+from inference import (
+    detect_value_type,
+    infer_column_type,
+    infer_schema,
+    is_type_compatible,
+)
+
 
 # loader.py tests
-
-
 def test_loader_valid_csv(tmp_path):
     csv_file = tmp_path / "test.csv"
 
@@ -37,9 +41,8 @@ def test_loader_missing_csv(tmp_path):
 
 # validators.py tests
 
+
 # check_missing_values
-
-
 def test_check_missing_values_no_changes():
     data = [{"id": "1", "name": "Alex"}, {"id": "2", "name": "Maria"}]
     copy_data = copy.deepcopy(data)
@@ -76,8 +79,6 @@ def test_validator_missing_value_empty_data():
 
 
 # check_duplicates
-
-
 def test_check_duplicates_values_no_changes():
     data = [
         {"id": "1", "name": "Ivan"},
@@ -157,11 +158,174 @@ def test_check_duplicates_exist_duplicates_different_order():
     }
 
 
+# check_type_anomalies
+@pytest.mark.parametrize(
+    "data, schema, expected",
+    [
+        # 1. Одна аномалия
+        (
+            [
+                {"name": "Alex", "age": "25"},
+                {"name": "Bob", "age": "30"},
+                {"name": "Charlie", "age": "unknown"},
+                {"name": "David", "age": "35"},
+            ],
+            {
+                "name": {"inferred_type": "str", "confidence": 1.0},
+                "age": {"inferred_type": "int", "confidence": 0.75},
+            },
+            {
+                "count": 1,
+                "locations": [{"row": 3, "column": "age"}],
+            },
+        ),
+        # 2. Несколько аномалий
+        (
+            [
+                {"age": "25", "salary": "3500.5"},
+                {"age": "wrong", "salary": "4200"},
+                {"age": "30", "salary": "error"},
+                {"age": "invalid", "salary": "5000.75"},
+            ],
+            {
+                "age": {"inferred_type": "int", "confidence": 0.5},
+                "salary": {"inferred_type": "float", "confidence": 0.75},
+            },
+            {
+                "count": 3,
+                "locations": [
+                    {"row": 2, "column": "age"},
+                    {"row": 3, "column": "salary"},
+                    {"row": 4, "column": "age"},
+                ],
+            },
+        ),
+        # 3. Нет аномалий
+        (
+            [
+                {"name": "Alex", "age": "25"},
+                {"name": "Bob", "age": "30"},
+                {"name": "Charlie", "age": "35"},
+            ],
+            {
+                "name": {"inferred_type": "str", "confidence": 1.0},
+                "age": {"inferred_type": "int", "confidence": 1.0},
+            },
+            {
+                "count": 0,
+                "locations": [],
+            },
+        ),
+        # 4. Пропущенные значения игнорируются
+        (
+            [
+                {"age": "25"},
+                {"age": None},
+                {"age": ""},
+                {"age": "   "},
+                {"age": "30"},
+            ],
+            {
+                "age": {"inferred_type": "int", "confidence": 1.0},
+            },
+            {
+                "count": 0,
+                "locations": [],
+            },
+        ),
+        # 5. Столбец с типом unknown пропускается
+        (
+            [
+                {"age": "25"},
+                {"age": "unknown"},
+                {"age": "30.5"},
+                {"age": "invalid"},
+            ],
+            {
+                "age": {"inferred_type": "unknown", "confidence": 0.5},
+            },
+            {
+                "count": 0,
+                "locations": [],
+            },
+        ),
+        # 6. int совместим с float
+        (
+            [
+                {"salary": "3500"},
+                {"salary": "4200.5"},
+                {"salary": "3900"},
+                {"salary": "5000.75"},
+            ],
+            {
+                "salary": {"inferred_type": "float", "confidence": 1.0},
+            },
+            {
+                "count": 0,
+                "locations": [],
+            },
+        ),
+        # 7. Отсутствующий ключ в строке
+        (
+            [
+                {"name": "Alex", "age": "25"},
+                {"name": "Bob"},
+                {"name": "Charlie", "age": "invalid"},
+                {"name": "David", "age": "30"},
+            ],
+            {
+                "name": {"inferred_type": "str", "confidence": 1.0},
+                "age": {"inferred_type": "int", "confidence": 0.75},
+            },
+            {
+                "count": 1,
+                "locations": [
+                    {"row": 3, "column": "age"},
+                ],
+            },
+        ),
+    ],
+)
+def test_check_type_anomalies(data, schema, expected):
+    assert check_type_anomalies(data, schema) == expected
+
+
+def test_check_type_anomalies_no_changes_in_data():
+    data = [
+        {"age": "25", "salary": "3500.5"},
+        {"age": "wrong", "salary": "4200"},
+        {"age": "30", "salary": "error"},
+        {"age": "invalid", "salary": "5000.75"},
+    ]
+    schema = {
+        "age": {"inferred_type": "int", "confidence": 0.5},
+        "salary": {"inferred_type": "float", "confidence": 0.75},
+    }
+    copy_data = copy.deepcopy(data)
+    check_type_anomalies(data, schema)
+    assert data == copy_data
+
+
+def test_check_type_anomalies_no_changes_in_schema():
+    data = [
+        {"age": "25", "salary": "3500.5"},
+        {"age": "wrong", "salary": "4200"},
+        {"age": "30", "salary": "error"},
+        {"age": "invalid", "salary": "5000.75"},
+    ]
+    schema = {
+        "age": {"inferred_type": "int", "confidence": 0.5},
+        "salary": {"inferred_type": "float", "confidence": 0.75},
+    }
+    copy_schema = copy.deepcopy(schema)
+    check_type_anomalies(data, schema)
+    assert schema == copy_schema
+
+
 # inference
 
+
 # detect_value_type
-
-
 @pytest.mark.parametrize(
     "value, expected",
     [
@@ -299,3 +463,25 @@ def test_infer_schema_no_changes():
     copy_data = copy.deepcopy(data)
     infer_schema(data)
     assert data == copy_data
+
+
+# is_type_compatible
+@pytest.mark.parametrize(
+    "expected_type, actual_type, expected",
+    [
+        ("int", "int", True),
+        ("int", "float", False),
+        ("float", "int", True),
+        ("float", "float", True),
+        ("float", "str", False),
+        ("bool", "bool", True),
+        ("bool", "int", False),
+        ("date", "date", True),
+        ("date", "str", False),
+        ("str", "int", True),
+        ("str", "date", True),
+        ("unknown", "int", False),
+    ],
+)
+def test_is_type_compatible(expected_type, actual_type, expected):
+    assert is_type_compatible(expected_type, actual_type) == expected

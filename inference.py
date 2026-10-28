@@ -1,7 +1,6 @@
 import math
 from datetime import date
 from collections import Counter
-from loader import load_csv
 
 
 # Type recognition
@@ -82,12 +81,7 @@ def infer_column_type(values: list[str | None]) -> dict:
 def infer_schema(data: list[dict[str, str | None]]) -> dict:
 
     # find unique keys
-    seen = dict.fromkeys(
-        key
-        for row in data
-        for key in row
-    )
-
+    seen = dict.fromkeys(key for row in data for key in row)
 
     # get full columns
     result = {}
@@ -97,6 +91,15 @@ def infer_schema(data: list[dict[str, str | None]]) -> dict:
     return result
 
 
+def is_type_compatible(expected_type: str, actual_type: str) -> bool:
+    return (
+        (expected_type == "int" and actual_type == "int")
+        or (expected_type == "float" and actual_type in ("int", "float"))
+        or (expected_type == "bool" and actual_type == "bool")
+        or (expected_type == "date" and actual_type == "date")
+        or expected_type == "str"
+    )
+
+
 if __name__ == "__main__":
-    data = []
-    print(infer_schema(data))
+    ...

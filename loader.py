@@ -7,4 +7,4 @@ def load_csv(path: str) -> list[dict[str, str]]:
 
 
 if __name__ == "__main__":
-    print(load_csv("data/test_loader.csv"))
+    ...

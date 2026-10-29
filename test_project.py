@@ -8,6 +8,7 @@ from inference import (
     infer_schema,
     is_type_compatible,
 )
+from reporting import build_report
 
 
 # loader.py tests
@@ -485,3 +486,303 @@ def test_infer_schema_no_changes():
 )
 def test_is_type_compatible(expected_type, actual_type, expected):
     assert is_type_compatible(expected_type, actual_type) == expected
+
+
+# reporting test - build_report
+@pytest.mark.parametrize(
+    "data, schema, checks, expected",
+    [
+        pytest.param(
+            # 1. Обычный отчёт с несколькими ошибками
+            [
+                {"name": "Alex", "age": "25"},
+                {"name": "Maria", "age": ""},
+                {"name": "John", "age": "wrong"},
+            ],
+            {
+                "name": {"inferred_type": "str", "confidence": 1.0},
+                "age": {"inferred_type": "int", "confidence": 0.5},
+            },
+            {
+                "missing_values": {
+                    "count": 1,
+                    "locations": [{"row": 2, "column": "age"}],
+                },
+                "duplicates": {
+                    "count": 0,
+                    "locations": [],
+                },
+                "type_anomalies": {
+                    "count": 1,
+                    "locations": [{"row": 3, "column": "age"}],
+                },
+            },
+            {
+                "summary": {
+                    "total_rows": 3,
+                    "total_columns": 2,
+                    "total_issues": 2,
+                },
+                "schema": {
+                    "name": {"inferred_type": "str", "confidence": 1.0},
+                    "age": {"inferred_type": "int", "confidence": 0.5},
+                },
+                "checks": {
+                    "missing_values": {
+                        "count": 1,
+                        "locations": [{"row": 2, "column": "age"}],
+                    },
+                    "duplicates": {
+                        "count": 0,
+                        "locations": [],
+                    },
+                    "type_anomalies": {
+                        "count": 1,
+                        "locations": [{"row": 3, "column": "age"}],
+                    },
+                },
+            },
+            id="standard-report",
+        ),
+        pytest.param(
+            # 2. Данные без ошибок
+            [
+                {"id": "1", "name": "Alex"},
+                {"id": "2", "name": "Maria"},
+            ],
+            {
+                "id": {"inferred_type": "int", "confidence": 1.0},
+                "name": {"inferred_type": "str", "confidence": 1.0},
+            },
+            {
+                "missing_values": {"count": 0, "locations": []},
+                "duplicates": {"count": 0, "locations": []},
+                "type_anomalies": {"count": 0, "locations": []},
+            },
+            {
+                "summary": {
+                    "total_rows": 2,
+                    "total_columns": 2,
+                    "total_issues": 0,
+                },
+                "schema": {
+                    "id": {"inferred_type": "int", "confidence": 1.0},
+                    "name": {"inferred_type": "str", "confidence": 1.0},
+                },
+                "checks": {
+                    "missing_values": {"count": 0, "locations": []},
+                    "duplicates": {"count": 0, "locations": []},
+                    "type_anomalies": {"count": 0, "locations": []},
+                },
+            },
+            id="no-issues",
+        ),
+        pytest.param(
+            # 3. Полностью пустой набор данных
+            [],
+            {},
+            {},
+            {
+                "summary": {
+                    "total_rows": 0,
+                    "total_columns": 0,
+                    "total_issues": 0,
+                },
+                "schema": {},
+                "checks": {},
+            },
+            id="empty-data",
+        ),
+        pytest.param(
+            # 4. Данные есть, но проверки не выполнялись
+            [
+                {"id": "1", "name": "Alex"},
+                {"id": "2", "name": "Maria"},
+            ],
+            {
+                "id": {"inferred_type": "int", "confidence": 1.0},
+                "name": {"inferred_type": "str", "confidence": 1.0},
+            },
+            {},
+            {
+                "summary": {
+                    "total_rows": 2,
+                    "total_columns": 2,
+                    "total_issues": 0,
+                },
+                "schema": {
+                    "id": {"inferred_type": "int", "confidence": 1.0},
+                    "name": {"inferred_type": "str", "confidence": 1.0},
+                },
+                "checks": {},
+            },
+            id="no-checks",
+        ),
+        pytest.param(
+            # 5. Несколько типов ошибок одновременно
+            [
+                {"id": "1", "age": "25"},
+                {"id": "1", "age": "25"},
+                {"id": "2", "age": ""},
+                {"id": "3", "age": "wrong"},
+            ],
+            {
+                "id": {"inferred_type": "int", "confidence": 1.0},
+                "age": {"inferred_type": "int", "confidence": 0.75},
+            },
+            {
+                "missing_values": {
+                    "count": 1,
+                    "locations": [{"row": 3, "column": "age"}],
+                },
+                "duplicates": {
+                    "count": 1,
+                    "locations": [{"row": 2, "column": None}],
+                },
+                "type_anomalies": {
+                    "count": 1,
+                    "locations": [{"row": 4, "column": "age"}],
+                },
+            },
+            {
+                "summary": {
+                    "total_rows": 4,
+                    "total_columns": 2,
+                    "total_issues": 3,
+                },
+                "schema": {
+                    "id": {"inferred_type": "int", "confidence": 1.0},
+                    "age": {"inferred_type": "int", "confidence": 0.75},
+                },
+                "checks": {
+                    "missing_values": {
+                        "count": 1,
+                        "locations": [{"row": 3, "column": "age"}],
+                    },
+                    "duplicates": {
+                        "count": 1,
+                        "locations": [{"row": 2, "column": None}],
+                    },
+                    "type_anomalies": {
+                        "count": 1,
+                        "locations": [{"row": 4, "column": "age"}],
+                    },
+                },
+            },
+            id="multiple-issue-types",
+        ),
+        pytest.param(
+            # 6. Дополнительный валидатор
+            [
+                {"id": "1"},
+                {"id": "2"},
+            ],
+            {
+                "id": {"inferred_type": "int", "confidence": 1.0},
+            },
+            {
+                "missing_values": {"count": 0, "locations": []},
+                "custom_validator": {
+                    "count": 5,
+                    "locations": [],
+                },
+            },
+            {
+                "summary": {
+                    "total_rows": 2,
+                    "total_columns": 1,
+                    "total_issues": 5,
+                },
+                "schema": {
+                    "id": {"inferred_type": "int", "confidence": 1.0},
+                },
+                "checks": {
+                    "missing_values": {"count": 0, "locations": []},
+                    "custom_validator": {
+                        "count": 5,
+                        "locations": [],
+                    },
+                },
+            },
+            id="custom-validator",
+        ),
+    ],
+)
+def test_build_report(data, schema, checks, expected):
+    result = build_report(data, schema, checks)
+    assert result == expected
+
+
+def test_build_report_no_changes_in_data():
+    data = [
+        {"id": "1", "age": "25"},
+        {"id": "2", "age": ""},
+    ]
+
+    schema = {
+        "id": {"inferred_type": "int", "confidence": 1.0},
+        "age": {"inferred_type": "int", "confidence": 1.0},
+    }
+
+    checks = {
+        "missing_values": {
+            "count": 1,
+            "locations": [{"row": 2, "column": "age"}],
+        },
+    }
+
+    original_data = copy.deepcopy(data)
+
+    build_report(data, schema, checks)
+
+    assert data == original_data
+
+
+def test_build_report_no_changes_in_schema():
+    data = [
+        {"id": "1", "age": "25"},
+        {"id": "2", "age": ""},
+    ]
+
+    schema = {
+        "id": {"inferred_type": "int", "confidence": 1.0},
+        "age": {"inferred_type": "int", "confidence": 1.0},
+    }
+
+    checks = {
+        "missing_values": {
+            "count": 1,
+            "locations": [{"row": 2, "column": "age"}],
+        },
+    }
+
+    original_schema = copy.deepcopy(schema)
+
+    build_report(data, schema, checks)
+
+    assert schema == original_schema
+
+
+def test_build_report_no_changes_in_checks():
+    data = [
+        {"id": "1", "age": "25"},
+        {"id": "2", "age": ""},
+    ]
+
+    schema = {
+        "id": {"inferred_type": "int", "confidence": 1.0},
+        "age": {"inferred_type": "int", "confidence": 1.0},
+    }
+
+    checks = {
+        "missing_values": {
+            "count": 1,
+            "locations": [{"row": 2, "column": "age"}],
+        },
+    }
+
+    original_checks = copy.deepcopy(checks)
+
+    build_report(data, schema, checks)
+
+    assert checks == original_checks

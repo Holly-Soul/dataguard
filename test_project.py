@@ -8,7 +8,7 @@ from inference import (
     infer_schema,
     is_type_compatible,
 )
-from reporting import build_report
+from reporting import build_report, format_summary
 from project import analyze_csv
 
 
@@ -489,7 +489,7 @@ def test_is_type_compatible(expected_type, actual_type, expected):
     assert is_type_compatible(expected_type, actual_type) == expected
 
 
-# reporting test - build_report
+# reporting test - build_report,format_summary
 @pytest.mark.parametrize(
     "data, schema, checks, expected",
     [
@@ -789,6 +789,120 @@ def test_build_report_no_changes_in_checks():
     assert checks == original_checks
 
 
+def test_format_summary_standard():
+    report = {
+        "summary": {
+            "total_rows": 100,
+            "total_columns": 5,
+            "total_issues": 12,
+        },
+        "checks": {
+            "missing_values": {"count": 5, "locations": []},
+            "duplicates": {"count": 3, "locations": []},
+            "type_anomalies": {"count": 4, "locations": []},
+        },
+    }
+
+    result = format_summary(report)
+
+    expected = (
+        f"{'=' * 40}\n"
+        f"{'DATAGUARD REPORT':^40}\n"
+        f"{'=' * 40}\n\n"
+        f"{'Rows analyzed:':<22}{100:>6}\n"
+        f"{'Columns analyzed:':<22}{5:>6}\n"
+        f"{'Total issues:':<22}{12:>6}\n\n"
+        f"{'-' * 40}\n"
+        f"{'ISSUES SUMMARY':^40}\n"
+        f"{'-' * 40}\n\n"
+        f"{'Missing values:':<22}{5:>6}\n"
+        f"{'Duplicate rows:':<22}{3:>6}\n"
+        f"{'Type anomalies:':<22}{4:>6}\n"
+    )
+
+    assert result == expected
+    assert isinstance(result, str)
+
+
+def test_format_summary_no_issues():
+    report = {
+        "summary": {
+            "total_rows": 25,
+            "total_columns": 3,
+            "total_issues": 0,
+        },
+        "checks": {
+            "missing_values": {"count": 0, "locations": []},
+            "duplicates": {"count": 0, "locations": []},
+            "type_anomalies": {"count": 0, "locations": []},
+        },
+    }
+
+    result = format_summary(report)
+
+    assert f"{'Rows analyzed:':<22}{25:>6}" in result
+    assert f"{'Columns analyzed:':<22}{3:>6}" in result
+    assert f"{'Total issues:':<22}{0:>6}" in result
+    assert f"{'Missing values:':<22}{0:>6}" in result
+    assert f"{'Duplicate rows:':<22}{0:>6}" in result
+    assert f"{'Type anomalies:':<22}{0:>6}" in result
+
+
+def test_format_summary_empty_data():
+    report = {
+        "summary": {
+            "total_rows": 0,
+            "total_columns": 0,
+            "total_issues": 0,
+        },
+        "checks": {
+            "missing_values": {"count": 0, "locations": []},
+            "duplicates": {"count": 0, "locations": []},
+            "type_anomalies": {"count": 0, "locations": []},
+        },
+    }
+
+    result = format_summary(report)
+
+    assert result.count("0") == 6
+    assert "DATAGUARD REPORT" in result
+    assert "ISSUES SUMMARY" in result
+
+
+def test_format_summary_no_mutation():
+    report = {
+        "summary": {
+            "total_rows": 10,
+            "total_columns": 2,
+            "total_issues": 2,
+        },
+        "schema": {
+            "id": {"inferred_type": "int", "confidence": 1.0},
+            "age": {"inferred_type": "int", "confidence": 0.9},
+        },
+        "checks": {
+            "missing_values": {
+                "count": 1,
+                "locations": [{"row": 3, "column": "age"}],
+            },
+            "duplicates": {
+                "count": 0,
+                "locations": [],
+            },
+            "type_anomalies": {
+                "count": 1,
+                "locations": [{"row": 7, "column": "age"}],
+            },
+        },
+    }
+
+    original = copy.deepcopy(report)
+
+    format_summary(report)
+
+    assert report == original
+
+
 # project.py integration tests
 def test_analyze_csv_valid(tmp_path):
     csv_file = tmp_path / "valid.csv"
@@ -912,10 +1026,3 @@ def test_analyze_csv_missing_file(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         analyze_csv(str(missing_file))
-
-
-
-
-
-
-

@@ -2,7 +2,7 @@ import argparse
 from loader import load_csv
 from inference import infer_schema
 from validators import check_missing_values, check_duplicates, check_type_anomalies
-from reporting import build_report
+from reporting import build_report, format_summary
 
 
 def main():
@@ -15,11 +15,8 @@ def main():
     )
     parser.add_argument("--json", help="Save report to JSON file")
     args = parser.parse_args()
-    print(args.path)
-    print(args.verbose)
-    print(args.json)
     report = analyze_csv(args.path)
-    print(report)
+    print(format_summary(report))
 
 
 def analyze_csv(path: str) -> dict:
@@ -31,9 +28,6 @@ def analyze_csv(path: str) -> dict:
         "type_anomalies": check_type_anomalies(data, schema),
     }
     return build_report(data, schema, checks)
-
-
-def format_summary(report: dict) -> str: ...
 
 
 if __name__ == "__main__":

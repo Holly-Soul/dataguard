@@ -8,7 +8,7 @@ from inference import (
     infer_schema,
     is_type_compatible,
 )
-from reporting import build_report, format_summary
+from reporting import build_report, format_summary, format_details
 from project import analyze_csv
 
 
@@ -489,7 +489,7 @@ def test_is_type_compatible(expected_type, actual_type, expected):
     assert is_type_compatible(expected_type, actual_type) == expected
 
 
-# reporting test - build_report,format_summary
+# reporting test - build_report,format_summary, format_details
 @pytest.mark.parametrize(
     "data, schema, checks, expected",
     [
@@ -789,6 +789,7 @@ def test_build_report_no_changes_in_checks():
     assert checks == original_checks
 
 
+# format_summary
 def test_format_summary_standard():
     report = {
         "summary": {
@@ -899,6 +900,171 @@ def test_format_summary_no_mutation():
     original = copy.deepcopy(report)
 
     format_summary(report)
+
+    assert report == original
+
+
+# format_details
+
+
+def test_format_details_standard():
+    report = {
+        "summary": {
+            "total_rows": 10,
+            "total_columns": 3,
+            "total_issues": 3,
+        },
+        "checks": {
+            "missing_values": {
+                "count": 1,
+                "locations": [{"row": 2, "column": "age"}],
+            },
+            "duplicates": {
+                "count": 1,
+                "locations": [{"row": 5, "column": None}],
+            },
+            "type_anomalies": {
+                "count": 1,
+                "locations": [{"row": 8, "column": "salary"}],
+            },
+        },
+    }
+
+    result = format_details(report)
+
+    assert result.startswith(format_summary(report))
+    assert "ISSUE DETAILS" in result
+    assert "Missing values - 1" in result
+    assert "Duplicate rows - 1" in result
+    assert "Type anomalies - 1" in result
+
+    assert "Row 2  |  Column: age" in result
+    assert "Row 5" in result
+    assert "Row 8  |  Column: salary" in result
+
+    assert "Column: None" not in result
+    assert isinstance(result, str)
+
+
+def test_format_details_no_issues():
+    report = {
+        "summary": {
+            "total_rows": 5,
+            "total_columns": 2,
+            "total_issues": 0,
+        },
+        "checks": {
+            "missing_values": {"count": 0, "locations": []},
+            "duplicates": {"count": 0, "locations": []},
+            "type_anomalies": {"count": 0, "locations": []},
+        },
+    }
+
+    result = format_details(report)
+
+    assert "Missing values - 0" in result
+    assert "Duplicate rows - 0" in result
+    assert "Type anomalies - 0" in result
+
+    assert result.count("No issues found") == 3
+    assert "ISSUE DETAILS" in result
+
+
+def test_format_details_multiple_locations():
+    report = {
+        "summary": {
+            "total_rows": 15,
+            "total_columns": 3,
+            "total_issues": 5,
+        },
+        "checks": {
+            "missing_values": {
+                "count": 3,
+                "locations": [
+                    {"row": 2, "column": "age"},
+                    {"row": 7, "column": "email"},
+                    {"row": 11, "column": "name"},
+                ],
+            },
+            "duplicates": {
+                "count": 2,
+                "locations": [
+                    {"row": 8, "column": None},
+                    {"row": 12, "column": None},
+                ],
+            },
+            "type_anomalies": {
+                "count": 0,
+                "locations": [],
+            },
+        },
+    }
+
+    result = format_details(report)
+
+    assert "Row 2  |  Column: age" in result
+    assert "Row 7  |  Column: email" in result
+    assert "Row 11  |  Column: name" in result
+
+    assert "Row 8\n" in result
+    assert "Row 12\n" in result
+
+    assert result.count("No issues found") == 1
+    assert "Type anomalies - 0" in result
+
+
+def test_format_details_empty_data():
+    report = {
+        "summary": {
+            "total_rows": 0,
+            "total_columns": 0,
+            "total_issues": 0,
+        },
+        "checks": {
+            "missing_values": {"count": 0, "locations": []},
+            "duplicates": {"count": 0, "locations": []},
+            "type_anomalies": {"count": 0, "locations": []},
+        },
+    }
+
+    result = format_details(report)
+
+    assert "Rows analyzed:" in result
+    assert "Columns analyzed:" in result
+    assert "Total issues:" in result
+    assert result.count("No issues found") == 3
+
+
+def test_format_details_no_mutation():
+    report = {
+        "summary": {
+            "total_rows": 10,
+            "total_columns": 2,
+            "total_issues": 2,
+        },
+        "schema": {
+            "id": {"inferred_type": "int", "confidence": 1.0},
+            "age": {"inferred_type": "int", "confidence": 0.9},
+        },
+        "checks": {
+            "missing_values": {
+                "count": 1,
+                "locations": [{"row": 3, "column": "age"}],
+            },
+            "duplicates": {
+                "count": 0,
+                "locations": [],
+            },
+            "type_anomalies": {
+                "count": 1,
+                "locations": [{"row": 7, "column": "age"}],
+            },
+        },
+    }
+
+    original = copy.deepcopy(report)
+
+    format_details(report)
 
     assert report == original
 

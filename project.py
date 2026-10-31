@@ -2,7 +2,7 @@ import argparse
 from loader import load_csv
 from inference import infer_schema
 from validators import check_missing_values, check_duplicates, check_type_anomalies
-from reporting import build_report, format_summary
+from reporting import build_report, format_summary, format_details
 
 
 def main():
@@ -14,9 +14,15 @@ def main():
         "-v", "--verbose", action="store_true", help="Show detailed report"
     )
     parser.add_argument("--json", help="Save report to JSON file")
+
     args = parser.parse_args()
+
     report = analyze_csv(args.path)
-    print(format_summary(report))
+
+    if args.verbose:
+        print(format_details(report))
+    else:
+        print(format_summary(report))
 
 
 def analyze_csv(path: str) -> dict:

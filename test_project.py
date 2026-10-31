@@ -1,5 +1,6 @@
 import pytest
 import copy
+import json
 from loader import load_csv
 from validators import check_missing_values, check_duplicates, check_type_anomalies
 from inference import (
@@ -8,7 +9,7 @@ from inference import (
     infer_schema,
     is_type_compatible,
 )
-from reporting import build_report, format_summary, format_details
+from reporting import build_report, format_summary, format_details, save_json
 from project import analyze_csv
 
 
@@ -1067,6 +1068,78 @@ def test_format_details_no_mutation():
     format_details(report)
 
     assert report == original
+
+
+# save_json
+
+
+def test_save_json_creates_file(tmp_path):
+    report = {
+        "summary": {"total_rows": 2, "total_columns": 1, "total_issues": 0},
+        "schema": {"age": {"inferred_type": "int", "confidence": 1.0}},
+        "checks": {
+            "missing_values": {"count": 0, "locations": []},
+            "duplicates": {"count": 0, "locations": []},
+            "type_anomalies": {"count": 0, "locations": []},
+        },
+    }
+    output = tmp_path / "report.json"
+
+    result = save_json(report, str(output))
+
+    assert result is None
+    assert output.is_file()
+    assert json.loads(output.read_text(encoding="utf-8")) == report
+
+
+def test_save_json_unicode(tmp_path):
+    report = {"message": "Ошибка в столбце Возраст"}
+    output = tmp_path / "unicode.json"
+
+    save_json(report, str(output))
+
+    content = output.read_text(encoding="utf-8")
+
+    assert "Ошибка в столбце Возраст" in content
+    assert "\\u041e" not in content
+    assert json.loads(content) == report
+
+
+def test_save_json_overwrites_file(tmp_path):
+    output = tmp_path / "report.json"
+    output.write_text('{"old": true}', encoding="utf-8")
+
+    report = {"summary": {"total_issues": 3}}
+
+    save_json(report, str(output))
+
+    assert json.loads(output.read_text(encoding="utf-8")) == report
+
+
+def test_save_json_no_mutation(tmp_path):
+    report = {
+        "summary": {"total_issues": 1},
+        "checks": {
+            "missing_values": {
+                "count": 1,
+                "locations": [{"row": 2, "column": "age"}],
+            }
+        },
+    }
+    original = copy.deepcopy(report)
+    output = tmp_path / "report.json"
+
+    save_json(report, str(output))
+
+    assert report == original
+
+
+def test_save_json_invalid_directory(tmp_path):
+    report = {"summary": {"total_issues": 0}}
+    output = tmp_path / "nonexistent" / "report.json"
+
+    with pytest.raises(FileNotFoundError):
+        save_json(report, str(output))
 
 
 # project.py integration tests

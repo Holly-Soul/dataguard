@@ -2,7 +2,7 @@ import argparse
 from loader import load_csv
 from inference import infer_schema
 from validators import check_missing_values, check_duplicates, check_type_anomalies
-from reporting import build_report, format_summary, format_details
+from reporting import build_report, format_summary, format_details, save_json
 
 
 def main():
@@ -18,6 +18,9 @@ def main():
     args = parser.parse_args()
 
     report = analyze_csv(args.path)
+
+    if args.json:
+        save_json(report, args.json)
 
     if args.verbose:
         print(format_details(report))

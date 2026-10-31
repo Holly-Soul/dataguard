@@ -1,5 +1,6 @@
 from inference import infer_schema
 from validators import check_missing_values, check_duplicates, check_type_anomalies
+import json
 
 
 def build_report(
@@ -96,6 +97,16 @@ def format_details(report: dict) -> str:
         f"{total_type_anomalies_value}\n{"-"*40}\n"
         f"{anomalies_details}\n{"-"*40}\n"
     )
+
+
+def save_json(report: dict, path: str) -> None:
+    with open(path, "w", encoding="utf-8") as file:
+        json.dump(
+            report,
+            file,
+            indent=4,
+            ensure_ascii=False,
+        )
 
 
 if __name__ == "__main__":

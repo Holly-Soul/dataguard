@@ -22,6 +22,8 @@ def main():
         report = analyze_csv(args.path)
     except FileNotFoundError:
         parser.error(f"File '{args.path}' not found.")
+    except ValueError as exc:
+        parser.error(exc)
 
     if args.json:
         if is_same_file(args.path, args.json):

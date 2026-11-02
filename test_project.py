@@ -16,6 +16,41 @@ from project import analyze_csv, main, is_same_file
 
 
 # project main
+def test_cli_duplicate_headers(tmp_path, monkeypatch, capsys):
+    csv_file = tmp_path / "duplicates.csv"
+    csv_file.write_text(
+        "id,name,name\n1,Alex,John\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(sys, "argv", ["project.py", str(csv_file)])
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 2
+    assert "Duplicate column name: 'name'" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_cli_empty_csv(tmp_path, monkeypatch, capsys):
+    csv_file = tmp_path / "empty.csv"
+    csv_file.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "argv", ["project.py", str(csv_file)])
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 2
+    assert "CSV is empty" in captured.err
+    assert "Traceback" not in captured.err
+
+
 def test_cli_summary(tmp_path, monkeypatch, capsys):
     csv_file = tmp_path / "valid.csv"
     csv_file.write_text(
@@ -165,6 +200,28 @@ def test_cli_json_error(tmp_path, monkeypatch, capsys):
     assert str(output) in captured.err
     assert not output.exists()
     assert captured.out == ""
+
+
+def test_cli_extra_values(tmp_path, monkeypatch, capsys):
+    csv_file = tmp_path / "extra.csv"
+    csv_file.write_text(
+        "id,name\n"
+        "1,Alex,EXTRA\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        sys, "argv", ["project.py", str(csv_file)]
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 2
+    assert "Extra values found at CSV line 2" in captured.err
+    assert "Traceback" not in captured.err
 
 
 # project is_same_file
@@ -389,19 +446,111 @@ def test_loader_valid_csv(tmp_path):
     assert result[1]["id"] == "2"
 
 
-def test_loader_empty_csv(tmp_path):
-    csv_file = tmp_path / "test.csv"
-
-    csv_file.write_text("", encoding="utf-8")
-
-    result = load_csv(str(csv_file))
-
-    assert result == []
-
-
 def test_loader_missing_csv(tmp_path):
     csv_file = tmp_path / "test.csv"
     with pytest.raises(FileNotFoundError):
+        load_csv(str(csv_file))
+
+
+def test_duplicate_headers(tmp_path):
+    csv_file = tmp_path / "duplicates.csv"
+    csv_file.write_text(
+        "id,name,name\n1,Alex,John\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Duplicate column name: 'name'"):
+        load_csv(str(csv_file))
+
+
+def test_three_duplicate_headers(tmp_path):
+    csv_file = tmp_path / "duplicates.csv"
+    csv_file.write_text(
+        "id,name,name,name\n1,Alex,John,Max\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Duplicate column name: 'name'"):
+        load_csv(str(csv_file))
+
+
+def test_empty_csv(tmp_path):
+    csv_file = tmp_path / "empty.csv"
+    csv_file.write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="CSV is empty"):
+        load_csv(str(csv_file))
+
+
+def test_valid_csv_preserves_data(tmp_path):
+    csv_file = tmp_path / "valid.csv"
+    csv_file.write_text(
+        "id,name,age\n" "1,Alex,25\n" "2,Maria,30\n",
+        encoding="utf-8",
+    )
+
+    result = load_csv(str(csv_file))
+
+    assert result == [
+        {"id": "1", "name": "Alex", "age": "25"},
+        {"id": "2", "name": "Maria", "age": "30"},
+    ]
+
+
+def test_loader_extra_values(tmp_path):
+    csv_file = tmp_path / "extra.csv"
+    csv_file.write_text(
+        "id,name,age\n" "1,Alex,25\n" "2,Maria,30,EXTRA\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Extra values found at CSV line 3",
+    ):
+        load_csv(str(csv_file))
+
+
+def test_loader_extra_values_first_row(tmp_path):
+    csv_file = tmp_path / "extra.csv"
+    csv_file.write_text(
+        "id,name\n" "1,Alex,EXTRA\n" "2,Maria\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Extra values found at CSV line 2",
+    ):
+        load_csv(str(csv_file))
+
+
+def test_loader_real_column_named_nonecolumn(tmp_path):
+    csv_file = tmp_path / "valid.csv"
+    csv_file.write_text(
+        "id,NoneColumn\n" "1,Alex\n" "2,Maria\n",
+        encoding="utf-8",
+    )
+
+    result = load_csv(str(csv_file))
+
+    assert result == [
+        {"id": "1", "NoneColumn": "Alex"},
+        {"id": "2", "NoneColumn": "Maria"},
+    ]
+
+
+def test_loader_multiline_csv_line_number(tmp_path):
+    csv_file = tmp_path / "multiline.csv"
+    csv_file.write_text(
+        "id,description\n" '1,"First line\nSecond line"\n' "2,Normal,EXTRA\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Extra values found at CSV line 4",
+    ):
         load_csv(str(csv_file))
 
 

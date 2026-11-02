@@ -2,6 +2,7 @@ import pytest
 import copy
 import json
 import sys
+import os
 from loader import load_csv
 from validators import check_missing_values, check_duplicates, check_type_anomalies
 from inference import (
@@ -11,9 +12,10 @@ from inference import (
     is_type_compatible,
 )
 from reporting import build_report, format_summary, format_details, save_json
-from project import analyze_csv, main
+from project import analyze_csv, main, is_same_file
 
-# test main
+
+# project main
 def test_cli_summary(tmp_path, monkeypatch, capsys):
     csv_file = tmp_path / "valid.csv"
     csv_file.write_text(
@@ -163,6 +165,215 @@ def test_cli_json_error(tmp_path, monkeypatch, capsys):
     assert str(output) in captured.err
     assert not output.exists()
     assert captured.out == ""
+
+
+# project is_same_file
+
+
+def test_is_same_file_identical_paths(tmp_path):
+    csv_file = tmp_path / "data.csv"
+    csv_file.write_text("id,name\n1,Alex\n", encoding="utf-8")
+
+    assert is_same_file(str(csv_file), str(csv_file)) is True
+
+
+def test_is_same_file_relative_paths(tmp_path, monkeypatch):
+    csv_file = tmp_path / "data.csv"
+    csv_file.write_text("id,name\n1,Alex\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+
+    assert is_same_file("data.csv", "./data.csv") is True
+    assert is_same_file("data.csv", "subdir/../data.csv") is True
+
+
+def test_is_same_file_different_existing_files(tmp_path):
+    csv_file = tmp_path / "data.csv"
+    json_file = tmp_path / "report.json"
+
+    csv_file.write_text("id,name\n1,Alex\n", encoding="utf-8")
+    json_file.write_text('{"status": "old"}', encoding="utf-8")
+
+    assert is_same_file(str(csv_file), str(json_file)) is False
+
+
+def test_is_same_file_new_output(tmp_path):
+    csv_file = tmp_path / "data.csv"
+    json_file = tmp_path / "report.json"
+
+    csv_file.write_text("id,name\n1,Alex\n", encoding="utf-8")
+
+    assert not json_file.exists()
+    assert is_same_file(str(csv_file), str(json_file)) is False
+
+
+def test_is_same_file_hardlink(tmp_path):
+    csv_file = tmp_path / "data.csv"
+    linked_file = tmp_path / "linked.json"
+
+    csv_file.write_text("id,name\n1,Alex\n", encoding="utf-8")
+
+    try:
+        os.link(csv_file, linked_file)
+    except OSError as exc:
+        pytest.skip(f"Hard links unavailable: {exc}")
+
+    assert csv_file.resolve() != linked_file.resolve()
+    assert is_same_file(str(csv_file), str(linked_file)) is True
+
+
+def test_cli_json_must_not_overwrite_csv(tmp_path, monkeypatch, capsys):
+    csv_file = tmp_path / "data.csv"
+
+    original_content = "id,name,age\n" "1,Alex,25\n" "2,Maria,30\n"
+
+    csv_file.write_text(original_content, encoding="utf-8")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "project.py",
+            str(csv_file),
+            "--json",
+            str(csv_file),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 2
+    assert "same file" in captured.err.lower()
+    assert csv_file.read_text(encoding="utf-8") == original_content
+    assert captured.out == ""
+
+
+# project.py integration tests
+def test_analyze_csv_valid(tmp_path):
+    csv_file = tmp_path / "valid.csv"
+
+    csv_file.write_text(
+        "id,name,age\n" "1,Alex,25\n" "2,Maria,30\n" "3,John,35\n",
+        encoding="utf-8",
+    )
+
+    report = analyze_csv(str(csv_file))
+
+    assert report["summary"] == {
+        "total_rows": 3,
+        "total_columns": 3,
+        "total_issues": 0,
+    }
+
+    assert report["schema"]["age"]["inferred_type"] == "int"
+
+    assert report["checks"]["missing_values"]["count"] == 0
+    assert report["checks"]["duplicates"]["count"] == 0
+    assert report["checks"]["type_anomalies"]["count"] == 0
+
+
+def test_analyze_csv_issues(tmp_path):
+    csv_file = tmp_path / "issues.csv"
+
+    csv_file.write_text(
+        "id,name,age\n"
+        "1,Alex,25\n"
+        "2,Maria,30\n"
+        "3,John,35\n"
+        "4,Anna,40\n"
+        "5,Peter,45\n"
+        "6,Kate,50\n"
+        "7,Tom,55\n"
+        "8,Emma,60\n"
+        "9,Max,65\n"
+        "10,Bob,wrong\n"
+        "11,Lucy,\n",
+        encoding="utf-8",
+    )
+
+    report = analyze_csv(str(csv_file))
+
+    assert report["summary"]["total_rows"] == 11
+    assert report["summary"]["total_columns"] == 3
+
+    assert report["schema"]["age"]["inferred_type"] == "int"
+    assert report["schema"]["age"]["confidence"] == 0.9
+
+    assert report["checks"]["missing_values"] == {
+        "count": 1,
+        "locations": [{"row": 11, "column": "age"}],
+    }
+
+    assert report["checks"]["type_anomalies"] == {
+        "count": 1,
+        "locations": [{"row": 10, "column": "age"}],
+    }
+
+    assert report["checks"]["duplicates"] == {
+        "count": 0,
+        "locations": [],
+    }
+
+    assert report["summary"]["total_issues"] == 2
+
+
+def test_analyze_csv_duplicates(tmp_path):
+    csv_file = tmp_path / "duplicates.csv"
+
+    csv_file.write_text(
+        "id,name,age\n"
+        "1,Alex,25\n"
+        "2,Maria,30\n"
+        "1,Alex,25\n"
+        "3,John,35\n"
+        "2,Maria,30\n",
+        encoding="utf-8",
+    )
+
+    report = analyze_csv(str(csv_file))
+
+    assert report["checks"]["duplicates"] == {
+        "count": 2,
+        "locations": [
+            {"row": 3, "column": None},
+            {"row": 5, "column": None},
+        ],
+    }
+
+    assert report["summary"]["total_issues"] == 2
+
+
+def test_analyze_csv_empty(tmp_path):
+    csv_file = tmp_path / "empty.csv"
+
+    csv_file.write_text(
+        "id,name,age\n",
+        encoding="utf-8",
+    )
+
+    report = analyze_csv(str(csv_file))
+
+    assert report["summary"] == {
+        "total_rows": 0,
+        "total_columns": 0,
+        "total_issues": 0,
+    }
+
+    assert report["schema"] == {}
+
+    assert report["checks"]["missing_values"]["count"] == 0
+    assert report["checks"]["duplicates"]["count"] == 0
+    assert report["checks"]["type_anomalies"]["count"] == 0
+
+
+def test_analyze_csv_missing_file(tmp_path):
+    missing_file = tmp_path / "nonexistent.csv"
+
+    with pytest.raises(FileNotFoundError):
+        analyze_csv(str(missing_file))
 
 
 # loader.py tests
@@ -1292,128 +1503,3 @@ def test_save_json_invalid_directory(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         save_json(report, str(output))
-
-
-# project.py integration tests
-def test_analyze_csv_valid(tmp_path):
-    csv_file = tmp_path / "valid.csv"
-
-    csv_file.write_text(
-        "id,name,age\n" "1,Alex,25\n" "2,Maria,30\n" "3,John,35\n",
-        encoding="utf-8",
-    )
-
-    report = analyze_csv(str(csv_file))
-
-    assert report["summary"] == {
-        "total_rows": 3,
-        "total_columns": 3,
-        "total_issues": 0,
-    }
-
-    assert report["schema"]["age"]["inferred_type"] == "int"
-
-    assert report["checks"]["missing_values"]["count"] == 0
-    assert report["checks"]["duplicates"]["count"] == 0
-    assert report["checks"]["type_anomalies"]["count"] == 0
-
-
-def test_analyze_csv_issues(tmp_path):
-    csv_file = tmp_path / "issues.csv"
-
-    csv_file.write_text(
-        "id,name,age\n"
-        "1,Alex,25\n"
-        "2,Maria,30\n"
-        "3,John,35\n"
-        "4,Anna,40\n"
-        "5,Peter,45\n"
-        "6,Kate,50\n"
-        "7,Tom,55\n"
-        "8,Emma,60\n"
-        "9,Max,65\n"
-        "10,Bob,wrong\n"
-        "11,Lucy,\n",
-        encoding="utf-8",
-    )
-
-    report = analyze_csv(str(csv_file))
-
-    assert report["summary"]["total_rows"] == 11
-    assert report["summary"]["total_columns"] == 3
-
-    assert report["schema"]["age"]["inferred_type"] == "int"
-    assert report["schema"]["age"]["confidence"] == 0.9
-
-    assert report["checks"]["missing_values"] == {
-        "count": 1,
-        "locations": [{"row": 11, "column": "age"}],
-    }
-
-    assert report["checks"]["type_anomalies"] == {
-        "count": 1,
-        "locations": [{"row": 10, "column": "age"}],
-    }
-
-    assert report["checks"]["duplicates"] == {
-        "count": 0,
-        "locations": [],
-    }
-
-    assert report["summary"]["total_issues"] == 2
-
-
-def test_analyze_csv_duplicates(tmp_path):
-    csv_file = tmp_path / "duplicates.csv"
-
-    csv_file.write_text(
-        "id,name,age\n"
-        "1,Alex,25\n"
-        "2,Maria,30\n"
-        "1,Alex,25\n"
-        "3,John,35\n"
-        "2,Maria,30\n",
-        encoding="utf-8",
-    )
-
-    report = analyze_csv(str(csv_file))
-
-    assert report["checks"]["duplicates"] == {
-        "count": 2,
-        "locations": [
-            {"row": 3, "column": None},
-            {"row": 5, "column": None},
-        ],
-    }
-
-    assert report["summary"]["total_issues"] == 2
-
-
-def test_analyze_csv_empty(tmp_path):
-    csv_file = tmp_path / "empty.csv"
-
-    csv_file.write_text(
-        "id,name,age\n",
-        encoding="utf-8",
-    )
-
-    report = analyze_csv(str(csv_file))
-
-    assert report["summary"] == {
-        "total_rows": 0,
-        "total_columns": 0,
-        "total_issues": 0,
-    }
-
-    assert report["schema"] == {}
-
-    assert report["checks"]["missing_values"]["count"] == 0
-    assert report["checks"]["duplicates"]["count"] == 0
-    assert report["checks"]["type_anomalies"]["count"] == 0
-
-
-def test_analyze_csv_missing_file(tmp_path):
-    missing_file = tmp_path / "nonexistent.csv"
-
-    with pytest.raises(FileNotFoundError):
-        analyze_csv(str(missing_file))

@@ -1,6 +1,7 @@
 import pytest
 import copy
 import json
+import sys
 from loader import load_csv
 from validators import check_missing_values, check_duplicates, check_type_anomalies
 from inference import (
@@ -10,7 +11,158 @@ from inference import (
     is_type_compatible,
 )
 from reporting import build_report, format_summary, format_details, save_json
-from project import analyze_csv
+from project import analyze_csv, main
+
+# test main
+def test_cli_summary(tmp_path, monkeypatch, capsys):
+    csv_file = tmp_path / "valid.csv"
+    csv_file.write_text(
+        "id,name,age\n" "1,Alex,25\n" "2,Maria,30\n" "3,John,35\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(sys, "argv", ["project.py", str(csv_file)])
+
+    main()
+    captured = capsys.readouterr()
+
+    assert "DATAGUARD REPORT" in captured.out
+    assert "Rows analyzed:" in captured.out
+    assert "Columns analyzed:" in captured.out
+    assert "Total issues:" in captured.out
+    assert "ISSUES SUMMARY" in captured.out
+    assert "ISSUE DETAILS" not in captured.out
+    assert captured.err == ""
+
+
+def test_cli_verbose(tmp_path, monkeypatch, capsys):
+    csv_file = tmp_path / "issues.csv"
+    csv_file.write_text(
+        "id,name,age\n" "1,Alex,25\n" "2,Maria,\n" "1,Alex,25\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(sys, "argv", ["project.py", str(csv_file), "-v"])
+
+    main()
+    captured = capsys.readouterr()
+
+    assert "DATAGUARD REPORT" in captured.out
+    assert "ISSUE DETAILS" in captured.out
+    assert "Missing values - 1" in captured.out
+    assert "Duplicate rows - 1" in captured.out
+    assert "Row 2  |  Column: age" in captured.out
+    assert "Row 3" in captured.out
+    assert captured.err == ""
+
+
+def test_cli_json(tmp_path, monkeypatch, capsys):
+    csv_file = tmp_path / "valid.csv"
+    output = tmp_path / "report.json"
+
+    csv_file.write_text(
+        "id,name,age\n" "1,Alex,25\n" "2,Maria,30\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["project.py", str(csv_file), "--json", str(output)],
+    )
+
+    main()
+    captured = capsys.readouterr()
+
+    assert output.is_file()
+
+    saved_report = json.loads(output.read_text(encoding="utf-8"))
+
+    assert saved_report["summary"]["total_rows"] == 2
+    assert saved_report["summary"]["total_columns"] == 3
+    assert saved_report["summary"]["total_issues"] == 0
+
+    assert "DATAGUARD REPORT" in captured.out
+    assert "ISSUE DETAILS" not in captured.out
+    assert captured.err == ""
+
+
+def test_cli_verbose_json(tmp_path, monkeypatch, capsys):
+    csv_file = tmp_path / "issues.csv"
+    output = tmp_path / "report.json"
+
+    csv_file.write_text(
+        "id,name,age\n" "1,Alex,25\n" "2,Maria,\n" "1,Alex,25\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["project.py", str(csv_file), "-v", "--json", str(output)],
+    )
+
+    main()
+    captured = capsys.readouterr()
+
+    assert output.is_file()
+
+    saved_report = json.loads(output.read_text(encoding="utf-8"))
+
+    assert saved_report["summary"]["total_issues"] == 2
+    assert saved_report["checks"]["missing_values"]["count"] == 1
+    assert saved_report["checks"]["duplicates"]["count"] == 1
+
+    assert "DATAGUARD REPORT" in captured.out
+    assert "ISSUE DETAILS" in captured.out
+    assert captured.err == ""
+
+
+def test_cli_missing_file(tmp_path, monkeypatch, capsys):
+    missing_file = tmp_path / "nonexistent.csv"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["project.py", str(missing_file)],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 2
+    assert "not found" in captured.err
+    assert str(missing_file) in captured.err
+    assert captured.out == ""
+
+
+def test_cli_json_error(tmp_path, monkeypatch, capsys):
+    csv_file = tmp_path / "valid.csv"
+    output = tmp_path / "nonexistent" / "report.json"
+
+    csv_file.write_text(
+        "id,name,age\n" "1,Alex,25\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["project.py", str(csv_file), "--json", str(output)],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 2
+    assert "Failed to save JSON" in captured.err
+    assert str(output) in captured.err
+    assert not output.exists()
+    assert captured.out == ""
 
 
 # loader.py tests

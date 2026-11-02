@@ -22,11 +22,11 @@ def main():
     except FileNotFoundError:
         parser.error(f"File '{args.path}' not found.")
 
-    try:
-        if args.json:
+    if args.json:
+        try:
             save_json(report, args.json)
-    except OSError as exc:
-        parser.error(f"Failed to save JSON to '{args.json}': {exc}")
+        except OSError as exc:
+            parser.error(f"Failed to save JSON to '{args.json}': {exc}")
 
     if args.verbose:
         print(format_details(report))
@@ -47,5 +47,3 @@ def analyze_csv(path: str) -> dict:
 
 if __name__ == "__main__":
     main()
-# python project.py data\test_loader.csv
-#python project.py data\test_loader.csv --json nonexistent/report.json

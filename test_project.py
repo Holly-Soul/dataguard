@@ -476,7 +476,7 @@ def test_loader_valid_csv(tmp_path):
     result = load_csv(str(csv_file))
 
     assert len(result) == 2
-    assert result[0]["name"] == "Alex"
+    assert result[0]["name"] == "Pipipopik"
     assert result[1]["id"] == "2"
 
 

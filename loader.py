@@ -3,7 +3,31 @@ import csv
 
 def load_csv(path: str) -> list[dict[str, str]]:
     with open(path, encoding="utf-8", newline="") as file:
-        return list(csv.DictReader(file))
+        seen = set()
+        rows = []
+        extra_key = object()
+        data = csv.DictReader(file, restkey=extra_key)
+
+        if data.fieldnames:
+            column_names = data.fieldnames
+        else:
+            raise ValueError("CSV is empty")
+
+        for column in column_names:
+            if column not in seen:
+                seen.add(column)
+            else:
+                raise ValueError(f"Duplicate column name: '{column}'")
+
+        for row in data:
+            if extra_key in row:
+                raise ValueError(f"Extra values found at CSV line {data.line_num}")
+            rows.append(row)
+
+        if not rows:
+            raise ValueError("CSV contains no data rows")
+
+        return rows
 
 
 if __name__ == "__main__":

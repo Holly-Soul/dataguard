@@ -1,6 +1,6 @@
 import math
-from datetime import date
 from collections import Counter
+from datetime import date
 
 
 # Type recognition
@@ -54,9 +54,7 @@ def infer_column_type(values: list[str | None]) -> dict:
         return {"inferred_type": "unknown", "confidence": 0.0}
 
     if "float" in detected_types:
-
         for x in detected_types:
-
             if x == "int":
                 normalized_types.append("float")
             else:

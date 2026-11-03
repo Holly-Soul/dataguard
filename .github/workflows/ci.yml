@@ -1,0 +1,33 @@
+name: DataGuard CI
+
+permissions:
+  contents: read
+
+on:
+    push:
+    pull_request:
+
+jobs:
+    quality-check:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                python-version: "3.14"
+
+            - name: Install dependencies
+              run: python -m pip install -r requirements-dev.txt
+
+            - name: Check code quality
+              run: ruff check .
+
+            - name: Check formatting
+              run: ruff format --check .
+
+            - name: Run tests
+              run: python -m pytest -q

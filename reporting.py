@@ -1,5 +1,3 @@
-from inference import infer_schema
-from validators import check_missing_values, check_duplicates, check_type_anomalies
 import json
 
 
@@ -32,14 +30,14 @@ def format_summary(report: dict) -> str:
     total_type_anomalies_value = report["checks"]["type_anomalies"]["count"]
 
     return (
-        f"{"="*40}\n{"DATAGUARD REPORT":^40}\n{"="*40}\n\n"
-        f"{"Rows analyzed:":<22}{rows_analyzed_value:>6}\n"
-        f"{"Columns analyzed:":<22}{columns_analyzed_value:>6}\n"
-        f"{"Total issues:":<22}{total_issues_value:>6}\n\n"
-        f"{"-"*40}\n{"ISSUES SUMMARY":^40}\n{"-"*40}\n\n"
-        f"{"Missing values:":<22}{total_missing_value:>6}\n"
-        f"{"Duplicate rows:":<22}{total_duplicates_value:>6}\n"
-        f"{"Type anomalies:":<22}{total_type_anomalies_value:>6}\n"
+        f"{'=' * 40}\n{'DATAGUARD REPORT':^40}\n{'=' * 40}\n\n"
+        f"{'Rows analyzed:':<22}{rows_analyzed_value:>6}\n"
+        f"{'Columns analyzed:':<22}{columns_analyzed_value:>6}\n"
+        f"{'Total issues:':<22}{total_issues_value:>6}\n\n"
+        f"{'-' * 40}\n{'ISSUES SUMMARY':^40}\n{'-' * 40}\n\n"
+        f"{'Missing values:':<22}{total_missing_value:>6}\n"
+        f"{'Duplicate rows:':<22}{total_duplicates_value:>6}\n"
+        f"{'Type anomalies:':<22}{total_type_anomalies_value:>6}\n"
     )
 
 
@@ -83,19 +81,16 @@ def format_details(report: dict) -> str:
 
     return (
         f"{small_report}\n"
-        f"{"="*40}\n{"ISSUE DETAILS":^40}\n{"="*40}\n\n"
-        #
+        f"{'=' * 40}\n{'ISSUE DETAILS':^40}\n{'=' * 40}\n\n"
         "Missing values - "
-        f"{total_missing_value}\n{"-"*40}\n"
-        f"{missing_details}\n{"-"*40}\n"
-        #
+        f"{total_missing_value}\n{'-' * 40}\n"
+        f"{missing_details}\n{'-' * 40}\n"
         "Duplicate rows - "
-        f"{total_duplicates_value}\n{"-"*40}\n"
-        f"{duplicates_details}\n{"-"*40}\n"
-        #
+        f"{total_duplicates_value}\n{'-' * 40}\n"
+        f"{duplicates_details}\n{'-' * 40}\n"
         "Type anomalies - "
-        f"{total_type_anomalies_value}\n{"-"*40}\n"
-        f"{anomalies_details}\n{"-"*40}\n"
+        f"{total_type_anomalies_value}\n{'-' * 40}\n"
+        f"{anomalies_details}\n{'-' * 40}\n"
     )
 
 

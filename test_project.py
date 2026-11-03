@@ -1,18 +1,20 @@
-import pytest
 import copy
 import json
-import sys
 import os
-from loader import load_csv
-from validators import check_missing_values, check_duplicates, check_type_anomalies
+import sys
+
+import pytest
+
 from inference import (
     detect_value_type,
     infer_column_type,
     infer_schema,
     is_type_compatible,
 )
-from reporting import build_report, format_summary, format_details, save_json
-from project import analyze_csv, main, is_same_file
+from loader import load_csv
+from project import analyze_csv, create_parser, is_same_file, main
+from reporting import build_report, format_details, format_summary, save_json
+from validators import check_duplicates, check_missing_values, check_type_anomalies
 
 
 # project main
@@ -54,7 +56,7 @@ def test_cli_empty_csv(tmp_path, monkeypatch, capsys):
 def test_cli_summary(tmp_path, monkeypatch, capsys):
     csv_file = tmp_path / "valid.csv"
     csv_file.write_text(
-        "id,name,age\n" "1,Alex,25\n" "2,Maria,30\n" "3,John,35\n",
+        "id,name,age\n1,Alex,25\n2,Maria,30\n3,John,35\n",
         encoding="utf-8",
     )
 
@@ -75,7 +77,7 @@ def test_cli_summary(tmp_path, monkeypatch, capsys):
 def test_cli_verbose(tmp_path, monkeypatch, capsys):
     csv_file = tmp_path / "issues.csv"
     csv_file.write_text(
-        "id,name,age\n" "1,Alex,25\n" "2,Maria,\n" "1,Alex,25\n",
+        "id,name,age\n1,Alex,25\n2,Maria,\n1,Alex,25\n",
         encoding="utf-8",
     )
 
@@ -98,7 +100,7 @@ def test_cli_json(tmp_path, monkeypatch, capsys):
     output = tmp_path / "report.json"
 
     csv_file.write_text(
-        "id,name,age\n" "1,Alex,25\n" "2,Maria,30\n",
+        "id,name,age\n1,Alex,25\n2,Maria,30\n",
         encoding="utf-8",
     )
 
@@ -129,7 +131,7 @@ def test_cli_verbose_json(tmp_path, monkeypatch, capsys):
     output = tmp_path / "report.json"
 
     csv_file.write_text(
-        "id,name,age\n" "1,Alex,25\n" "2,Maria,\n" "1,Alex,25\n",
+        "id,name,age\n1,Alex,25\n2,Maria,\n1,Alex,25\n",
         encoding="utf-8",
     )
 
@@ -180,7 +182,7 @@ def test_cli_json_error(tmp_path, monkeypatch, capsys):
     output = tmp_path / "nonexistent" / "report.json"
 
     csv_file.write_text(
-        "id,name,age\n" "1,Alex,25\n",
+        "id,name,age\n1,Alex,25\n",
         encoding="utf-8",
     )
 
@@ -205,14 +207,11 @@ def test_cli_json_error(tmp_path, monkeypatch, capsys):
 def test_cli_extra_values(tmp_path, monkeypatch, capsys):
     csv_file = tmp_path / "extra.csv"
     csv_file.write_text(
-        "id,name\n"
-        "1,Alex,EXTRA\n",
+        "id,name\n1,Alex,EXTRA\n",
         encoding="utf-8",
     )
 
-    monkeypatch.setattr(
-        sys, "argv", ["project.py", str(csv_file)]
-    )
+    monkeypatch.setattr(sys, "argv", ["project.py", str(csv_file)])
 
     with pytest.raises(SystemExit) as exc_info:
         main()
@@ -222,6 +221,69 @@ def test_cli_extra_values(tmp_path, monkeypatch, capsys):
     assert exc_info.value.code == 2
     assert "Extra values found at CSV line 2" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_cli_invalid_utf8(tmp_path, monkeypatch, capsys):
+    csv_file = tmp_path / "invalid.csv"
+    csv_file.write_bytes(b"id,name\n1,\xff\n")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["project.py", str(csv_file)],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 2
+    assert "Unable to decode CSV. Expected UTF-8 encoding." in captured.err
+    assert "Traceback" not in captured.err
+    assert captured.out == ""
+
+
+# project create_parser
+
+
+def test_create_parser_valid_arguments():
+    parser = create_parser()
+
+    args = parser.parse_args(
+        [
+            "data.csv",
+            "--verbose",
+            "--json",
+            "report.json",
+        ]
+    )
+
+    assert args.path == "data.csv"
+    assert args.verbose is True
+    assert args.json == "report.json"
+
+
+def test_create_parser_defaults():
+    parser = create_parser()
+
+    args = parser.parse_args(["data.csv"])
+
+    assert args.path == "data.csv"
+    assert args.verbose is False
+    assert args.json is None
+
+
+def test_create_parser_missing_path(capsys):
+    parser = create_parser()
+
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args([])
+
+    captured = capsys.readouterr()
+
+    assert exc_info.value.code == 2
+    assert "required" in captured.err
 
 
 # project is_same_file
@@ -282,7 +344,7 @@ def test_is_same_file_hardlink(tmp_path):
 def test_cli_json_must_not_overwrite_csv(tmp_path, monkeypatch, capsys):
     csv_file = tmp_path / "data.csv"
 
-    original_content = "id,name,age\n" "1,Alex,25\n" "2,Maria,30\n"
+    original_content = "id,name,age\n1,Alex,25\n2,Maria,30\n"
 
     csv_file.write_text(original_content, encoding="utf-8")
 
@@ -313,7 +375,7 @@ def test_analyze_csv_valid(tmp_path):
     csv_file = tmp_path / "valid.csv"
 
     csv_file.write_text(
-        "id,name,age\n" "1,Alex,25\n" "2,Maria,30\n" "3,John,35\n",
+        "id,name,age\n1,Alex,25\n2,Maria,30\n3,John,35\n",
         encoding="utf-8",
     )
 
@@ -381,12 +443,7 @@ def test_analyze_csv_duplicates(tmp_path):
     csv_file = tmp_path / "duplicates.csv"
 
     csv_file.write_text(
-        "id,name,age\n"
-        "1,Alex,25\n"
-        "2,Maria,30\n"
-        "1,Alex,25\n"
-        "3,John,35\n"
-        "2,Maria,30\n",
+        "id,name,age\n1,Alex,25\n2,Maria,30\n1,Alex,25\n3,John,35\n2,Maria,30\n",
         encoding="utf-8",
     )
 
@@ -401,29 +458,6 @@ def test_analyze_csv_duplicates(tmp_path):
     }
 
     assert report["summary"]["total_issues"] == 2
-
-
-def test_analyze_csv_empty(tmp_path):
-    csv_file = tmp_path / "empty.csv"
-
-    csv_file.write_text(
-        "id,name,age\n",
-        encoding="utf-8",
-    )
-
-    report = analyze_csv(str(csv_file))
-
-    assert report["summary"] == {
-        "total_rows": 0,
-        "total_columns": 0,
-        "total_issues": 0,
-    }
-
-    assert report["schema"] == {}
-
-    assert report["checks"]["missing_values"]["count"] == 0
-    assert report["checks"]["duplicates"]["count"] == 0
-    assert report["checks"]["type_anomalies"]["count"] == 0
 
 
 def test_analyze_csv_missing_file(tmp_path):
@@ -474,18 +508,18 @@ def test_three_duplicate_headers(tmp_path):
         load_csv(str(csv_file))
 
 
-def test_empty_csv(tmp_path):
+def test_loader_analyze_csv_empty(tmp_path):
     csv_file = tmp_path / "empty.csv"
-    csv_file.write_text("", encoding="utf-8")
+    csv_file.write_text("id,name,age\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="CSV is empty"):
-        load_csv(str(csv_file))
+    with pytest.raises(ValueError, match="CSV contains no data rows"):
+        analyze_csv(str(csv_file))
 
 
 def test_valid_csv_preserves_data(tmp_path):
     csv_file = tmp_path / "valid.csv"
     csv_file.write_text(
-        "id,name,age\n" "1,Alex,25\n" "2,Maria,30\n",
+        "id,name,age\n1,Alex,25\n2,Maria,30\n",
         encoding="utf-8",
     )
 
@@ -500,7 +534,7 @@ def test_valid_csv_preserves_data(tmp_path):
 def test_loader_extra_values(tmp_path):
     csv_file = tmp_path / "extra.csv"
     csv_file.write_text(
-        "id,name,age\n" "1,Alex,25\n" "2,Maria,30,EXTRA\n",
+        "id,name,age\n1,Alex,25\n2,Maria,30,EXTRA\n",
         encoding="utf-8",
     )
 
@@ -514,7 +548,7 @@ def test_loader_extra_values(tmp_path):
 def test_loader_extra_values_first_row(tmp_path):
     csv_file = tmp_path / "extra.csv"
     csv_file.write_text(
-        "id,name\n" "1,Alex,EXTRA\n" "2,Maria\n",
+        "id,name\n1,Alex,EXTRA\n2,Maria\n",
         encoding="utf-8",
     )
 
@@ -528,7 +562,7 @@ def test_loader_extra_values_first_row(tmp_path):
 def test_loader_real_column_named_nonecolumn(tmp_path):
     csv_file = tmp_path / "valid.csv"
     csv_file.write_text(
-        "id,NoneColumn\n" "1,Alex\n" "2,Maria\n",
+        "id,NoneColumn\n1,Alex\n2,Maria\n",
         encoding="utf-8",
     )
 
@@ -543,7 +577,7 @@ def test_loader_real_column_named_nonecolumn(tmp_path):
 def test_loader_multiline_csv_line_number(tmp_path):
     csv_file = tmp_path / "multiline.csv"
     csv_file.write_text(
-        "id,description\n" '1,"First line\nSecond line"\n' "2,Normal,EXTRA\n",
+        'id,description\n1,"First line\nSecond line"\n2,Normal,EXTRA\n',
         encoding="utf-8",
     )
 
@@ -551,6 +585,23 @@ def test_loader_multiline_csv_line_number(tmp_path):
         ValueError,
         match="Extra values found at CSV line 4",
     ):
+        load_csv(str(csv_file))
+
+
+def test_loader_headers_only(tmp_path):
+    csv_file = tmp_path / "headers_only.csv"
+    csv_file.write_text("id,name,age\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="CSV contains no data rows"):
+        load_csv(str(csv_file))
+
+
+def test_loader_invalid_utf8(tmp_path):
+    csv_file = tmp_path / "invalid.csv"
+
+    csv_file.write_bytes(b"id,name\n1,\xff\n")
+
+    with pytest.raises(UnicodeDecodeError):
         load_csv(str(csv_file))
 
 
@@ -591,6 +642,51 @@ def test_validator_missing_value_several_missings():
 def test_validator_missing_value_empty_data():
     data = []
     assert check_missing_values(data) == {"count": 0, "locations": []}
+
+
+@pytest.mark.parametrize(
+    "value, expected_count",
+    [
+        (None, 1),
+        ("", 1),
+        ("   ", 1),
+        ("\t", 1),
+        ("\n", 1),
+        (" Alex ", 0),
+        ("0", 0),
+        ("False", 0),
+    ],
+)
+def test_missing_values_whitespace(value, expected_count):
+    data = [{"name": value}]
+
+    result = check_missing_values(data)
+
+    assert result["count"] == expected_count
+
+    if expected_count:
+        assert result["locations"] == [{"row": 1, "column": "name"}]
+    else:
+        assert result["locations"] == []
+
+
+def test_missing_values_multiple_rows():
+    data = [
+        {"id": "1", "name": "Alex", "age": "25"},
+        {"id": "2", "name": "   ", "age": ""},
+        {"id": "3", "name": "Maria", "age": None},
+    ]
+
+    result = check_missing_values(data)
+
+    assert result == {
+        "count": 3,
+        "locations": [
+            {"row": 2, "column": "name"},
+            {"row": 2, "column": "age"},
+            {"row": 3, "column": "age"},
+        ],
+    }
 
 
 # check_duplicates

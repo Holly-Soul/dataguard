@@ -4,7 +4,7 @@ import csv
 def load_csv(path: str) -> list[dict[str, str]]:
     with open(path, encoding="utf-8", newline="") as file:
         seen = set()
-        rows = list()
+        rows = []
         extra_key = object()
         data = csv.DictReader(file, restkey=extra_key)
 
@@ -24,9 +24,11 @@ def load_csv(path: str) -> list[dict[str, str]]:
                 raise ValueError(f"Extra values found at CSV line {data.line_num}")
             rows.append(row)
 
+        if not rows:
+            raise ValueError("CSV contains no data rows")
+
         return rows
 
 
 if __name__ == "__main__":
-    print(load_csv("data/test_loader.csv"))
     ...

@@ -77,7 +77,7 @@ Exports the complete structured analysis report to a JSON file.
 
 The exported report contains dataset statistics, inferred column types, validation results, issue counts, and affected locations.
 
-JSON export is independent of the selected console reporting mode.
+JSON export is independent of the selected console reporting mode
 
 ## Project Structure
 

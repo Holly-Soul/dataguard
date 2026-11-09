@@ -247,7 +247,7 @@ def test_cli_invalid_utf8(tmp_path, monkeypatch, capsys):
 # project create_parser
 
 
-def test_create_parser_valid_arguments():
+def test_create_parser():
     parser = create_parser()
 
     args = parser.parse_args(
@@ -289,7 +289,7 @@ def test_create_parser_missing_path(capsys):
 # project is_same_file
 
 
-def test_is_same_file_identical_paths(tmp_path):
+def test_is_same_file(tmp_path):
     csv_file = tmp_path / "data.csv"
     csv_file.write_text("id,name\n1,Alex\n", encoding="utf-8")
 
@@ -371,7 +371,7 @@ def test_cli_json_must_not_overwrite_csv(tmp_path, monkeypatch, capsys):
 
 
 # project.py integration tests
-def test_analyze_csv_valid(tmp_path):
+def test_analyze_csv(tmp_path):
     csv_file = tmp_path / "valid.csv"
 
     csv_file.write_text(

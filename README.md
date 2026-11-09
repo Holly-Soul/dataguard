@@ -1,5 +1,7 @@
 # DataGuard
 
+#### Video Demo: https://youtu.be/kErNW2hi5eE
+
 DataGuard is a lightweight command-line tool for analyzing the quality of CSV datasets. Built with Python's standard library, it identifies missing values, duplicate records, and type anomalies, and generates structured reports for further investigation.
 
 The application supports summary and detailed console reports, as well as JSON export for integration with other tools and workflows.
@@ -86,12 +88,14 @@ dataguard/
 ├── .github/
 │   └── workflows/
 │       └── ci.yml
-├── tests/
+├── .gitignore
 ├── project.py
 ├── loader.py
 ├── inference.py
 ├── validators.py
 ├── reporting.py
+├── test_project.py
+├── requirements.txt
 ├── requirements-dev.txt
 └── README.md
 ```
@@ -103,9 +107,12 @@ dataguard/
 | `inference.py` | Value type detection, schema inference, and type compatibility checks |
 | `validators.py` | Missing-value, duplicate-row, and type-anomaly detection |
 | `reporting.py` | Structured report generation, console formatting, and JSON export |
-| `tests/` | Automated tests using pytest |
+| `test_project.py` | Automated tests for the CLI and its supporting modules |
+| `requirements.txt` | pytest dependency for running the tests |
 | `.github/workflows/ci.yml` | GitHub Actions continuous integration workflow |
-| `requirements-dev.txt` | Development dependencies |
+| `requirements-dev.txt` | pytest and Ruff for development and CI |
+| `.gitignore` | Excludes local environments, generated reports, and datasets |
+| `README.md` | Project overview, demo video, and usage instructions |
 
 The modular design makes individual components easier to test and maintain.
 
@@ -147,7 +154,13 @@ source .venv/bin/activate
 
 ### Install Development Dependencies
 
-To run tests and code quality checks, install the optional development dependencies:
+To install pytest and run the tests:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+For both pytest and Ruff, install the development dependencies:
 
 ```bash
 python -m pip install -r requirements-dev.txt
@@ -201,7 +214,7 @@ Or use the shorter option:
 python project.py yourCSV.csv -v
 ```
 
-The verbose report displays the same summary information and adds the locations of detected issues.
+The verbose report displays the same summary information and adds the locations of detected issues. Row numbers start at 1 for the first data record, after the header.
 
 For example, a missing value may be reported as:
 
